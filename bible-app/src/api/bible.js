@@ -1,26 +1,100 @@
-// Bible API using Digital Bible Platform (DBT) - 4.dbt.io
-const API_BASE_URL = 'https://4.dbt.io';
+// Bible API using Digital Bible Platform (DBT) - api.dbt.org/v4
+const API_BASE_URL = 'https://api.dbt.org/v4';
 const API_KEY = '39cf40d2-bdb9-4a47-9f7e-e2d0ba021c93';
-const VERSION_ID = 'engwsv'; // World English Bible (free version)
+
+// Cache for discovered version IDs
+let textVersionId = null;
+let audioVersionId = null;
 
 // Helper to handle DBT API response structure
 const handleResponse = async (response) => {
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Resource not found. Please check your API key and version.');
+    }
     throw new Error(`API Error: ${response.status}`);
   }
   const data = await response.json();
   return data.data || data; // DBT often wraps data in a 'data' property
 };
 
-export async function getBooks(versionId = VERSION_ID) {
+/**
+ * Find a valid English Text Version dynamically
+ */
+const findTextVersion = async () => {
+  if (textVersionId) return textVersionId;
+
   try {
-    const response = await fetch(`${API_BASE_URL}/volumes?key=${API_KEY}&version_id=${versionId}`);
+    const response = await fetch(`${API_BASE_URL}/bibles?language=en`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch versions');
+    
+    const data = await response.json();
+    const versions = data.data || [];
+    
+    // Prefer World English Bible (WEB) or other free versions
+    const preferred = versions.find(v => v.id === 'WEB') || 
+                      versions.find(v => v.id === 'ENGESV') || 
+                      versions.find(v => v.id === 'KJV') ||
+                      versions[0];
+
+    if (preferred) {
+      textVersionId = preferred.id;
+      console.log(`✅ Using text version: ${preferred.name} (${preferred.id})`);
+      return preferred.id;
+    }
+    throw new Error('No English text version found');
+  } catch (error) {
+    console.error('❌ Error finding text version:', error);
+    throw error;
+  }
+};
+
+/**
+ * Find a valid Audio Version dynamically
+ */
+const findAudioVersion = async () => {
+  if (audioVersionId) return audioVersionId;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/bibles?language=en&tags=audio`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch audio versions');
+    
+    const data = await response.json();
+    const versions = data.data || [];
+    const preferred = versions[0];
+
+    if (preferred) {
+      audioVersionId = preferred.id;
+      console.log(`✅ Using audio version: ${preferred.name} (${preferred.id})`);
+      return preferred.id;
+    }
+    throw new Error('No audio version found');
+  } catch (error) {
+    console.warn('⚠️ Audio not available:', error.message);
+    return null;
+  }
+};
+
+export async function getBooks() {
+  try {
+    const versionId = await findTextVersion();
+    const response = await fetch(`${API_BASE_URL}/bibles/${versionId}/books`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
+    
     const books = await handleResponse(response);
+    
     // Map DBT volume structure to our app's expected structure
     return books.map(book => ({
       id: book.id,
       name: book.name,
-      abbr: book.abbreviation || book.id.substring(0, 3),
+      abbr: book.abbreviation || book.id.substring(0, 3).toUpperCase(),
       testament: book.testament === 'NT' ? 'NT' : 'OT',
       chapters: book.chapters || []
     }));
@@ -30,17 +104,21 @@ export async function getBooks(versionId = VERSION_ID) {
   }
 }
 
-export async function getChapter(bookId, chapterNum, versionId = VERSION_ID) {
+export async function getChapter(bookId, chapterNum) {
   try {
-    // DBT Endpoint: /chapters/{version_id}/{book_id}/{chapter_num}
+    const versionId = await findTextVersion();
+    
+    // DBT Endpoint: /bibles/{version_id}/chapters/{book_id}/{chapter_num}
     const response = await fetch(
-      `${API_BASE_URL}/chapters/${versionId}/${bookId}/${chapterNum}?key=${API_KEY}`
+      `${API_BASE_URL}/bibles/${versionId}/chapters/${bookId}/${chapterNum}`,
+      { headers: { 'X-API-Key': API_KEY } }
     );
+    
     const chapterData = await handleResponse(response);
     
     // Format verses for the UI
     const verses = chapterData.verses?.map(v => ({
-      number: v.num,
+      number: v.num || v.number,
       text: v.text
     })) || [];
 
@@ -57,9 +135,8 @@ export async function getChapter(bookId, chapterNum, versionId = VERSION_ID) {
   }
 }
 
-export async function getVerse(reference, versionId = VERSION_ID) {
+export async function getVerse(reference) {
   // For single verse, we can use search or parse and fetch chapter
-  // This is a simplified implementation
   const parts = reference.split(' ');
   if (parts.length < 2) throw new Error('Invalid reference format');
   
@@ -69,9 +146,9 @@ export async function getVerse(reference, versionId = VERSION_ID) {
   const verseNum = chapterVerse[1] || null;
   
   // Find book ID from name (simplified)
-  const bookId = bookName.replace(/ /g, ''); // DBT uses concatenated IDs
+  const bookId = bookName.replace(/ /g, '').toUpperCase(); 
   
-  const chapterData = await getChapter(bookId, chapter, versionId);
+  const chapterData = await getChapter(bookId, chapter);
   if (verseNum) {
     const verse = chapterData.verses.find(v => v.number === parseInt(verseNum));
     return verse ? { ...verse, reference } : null;
@@ -79,13 +156,16 @@ export async function getVerse(reference, versionId = VERSION_ID) {
   return chapterData;
 }
 
-export async function search(query, versionId = VERSION_ID) {
+export async function search(query) {
   try {
-    // DBT Search Endpoint: /search?q={query}&version_id={version_id}
+    const versionId = await findTextVersion();
     const encodedQuery = encodeURIComponent(query);
+    
     const response = await fetch(
-      `${API_BASE_URL}/search?q=${encodedQuery}&version_id=${versionId}&key=${API_KEY}`
+      `${API_BASE_URL}/bibles/${versionId}/search?q=${encodedQuery}`,
+      { headers: { 'X-API-Key': API_KEY } }
     );
+    
     const results = await handleResponse(response);
     
     return results.map(item => ({
@@ -101,14 +181,33 @@ export async function search(query, versionId = VERSION_ID) {
   }
 }
 
-export async function getAudioUrl(bookId, chapterNum, versionId = VERSION_ID) {
+export async function getAudioUrl(bookId, chapterNum) {
   try {
-    // DBT Endpoint: /audio_chapters/{version_id}/{book_id}/{chapter_num}
+    const versionId = await findAudioVersion();
+    if (!versionId) return null;
+
+    // DBT Endpoint: /bibles/{version_id}/chapters/{book_id}/{chapter_num}
+    // Audio versions return media info in the chapter response
     const response = await fetch(
-      `${API_BASE_URL}/audio_chapters/${versionId}/${bookId}/${chapterNum}?key=${API_KEY}`
+      `${API_BASE_URL}/bibles/${versionId}/chapters/${bookId}/${chapterNum}`,
+      { headers: { 'X-API-Key': API_KEY } }
     );
+    
+    if (!response.ok) return null;
+    
     const audioData = await handleResponse(response);
-    return audioData.url; // Returns the direct MP3 URL
+    
+    // Check for direct URL in response
+    if (audioData.path && audioData.path.startsWith('http')) {
+      return audioData.path;
+    }
+    
+    // Some DBT audio providers use a different structure
+    if (audioData.media && audioData.media.url) {
+      return audioData.media.url;
+    }
+    
+    return null;
   } catch (error) {
     console.error("Error fetching audio:", error);
     return null;
