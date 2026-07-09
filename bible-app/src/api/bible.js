@@ -1,100 +1,188 @@
-// Bible API using free bible-api.com for KJV text
-const BASE_URL = 'https://bible-api.com';
+// Bible API using Digital Bible Platform (DBT) - 4.dbt.io
+const API_BASE_URL = 'https://4.dbt.io';
+const API_KEY = '39cf40d2-bdb9-4a47-9f7e-e2d0ba021c93';
+const VERSION_ID = 'engwsv'; // World English Bible (free version)
 
-export async function getBooks() {
-  const response = await fetch(`${BASE_URL}/books`);
-  if (!response.ok) throw new Error('Failed to fetch books');
-  return response.json();
+// Helper to handle DBT API response structure
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.data || data; // DBT often wraps data in a 'data' property
+};
+
+export async function getBooks(versionId = VERSION_ID) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/volumes?key=${API_KEY}&version_id=${versionId}`);
+    const books = await handleResponse(response);
+    // Map DBT volume structure to our app's expected structure
+    return books.map(book => ({
+      id: book.id,
+      name: book.name,
+      abbr: book.abbreviation || book.id.substring(0, 3),
+      testament: book.testament === 'NT' ? 'NT' : 'OT',
+      chapters: book.chapters || []
+    }));
+  } catch (error) {
+    console.error("Error fetching books:", error);
+    throw error;
+  }
 }
 
-export async function getChapter(book, chapter) {
-  const response = await fetch(`${BASE_URL}/${book}/${chapter}`);
-  if (!response.ok) throw new Error('Failed to fetch chapter');
-  return response.json();
+export async function getChapter(bookId, chapterNum, versionId = VERSION_ID) {
+  try {
+    // DBT Endpoint: /chapters/{version_id}/{book_id}/{chapter_num}
+    const response = await fetch(
+      `${API_BASE_URL}/chapters/${versionId}/${bookId}/${chapterNum}?key=${API_KEY}`
+    );
+    const chapterData = await handleResponse(response);
+    
+    // Format verses for the UI
+    const verses = chapterData.verses?.map(v => ({
+      number: v.num,
+      text: v.text
+    })) || [];
+
+    return {
+      bookId,
+      chapterNum,
+      versionId,
+      verses,
+      reference: `${bookId} ${chapterNum}`
+    };
+  } catch (error) {
+    console.error("Error fetching chapter:", error);
+    throw error;
+  }
 }
 
-export async function getVerse(reference) {
-  const response = await fetch(`${BASE_URL}/${reference}`);
-  if (!response.ok) throw new Error('Failed to fetch verse');
-  return response.json();
+export async function getVerse(reference, versionId = VERSION_ID) {
+  // For single verse, we can use search or parse and fetch chapter
+  // This is a simplified implementation
+  const parts = reference.split(' ');
+  if (parts.length < 2) throw new Error('Invalid reference format');
+  
+  const bookName = parts.slice(0, -1).join(' ');
+  const chapterVerse = parts[parts.length - 1].split(':');
+  const chapter = chapterVerse[0];
+  const verseNum = chapterVerse[1] || null;
+  
+  // Find book ID from name (simplified)
+  const bookId = bookName.replace(/ /g, ''); // DBT uses concatenated IDs
+  
+  const chapterData = await getChapter(bookId, chapter, versionId);
+  if (verseNum) {
+    const verse = chapterData.verses.find(v => v.number === parseInt(verseNum));
+    return verse ? { ...verse, reference } : null;
+  }
+  return chapterData;
 }
 
-export async function search(query) {
-  // Simple search - fetch all and filter (bible-api.com doesn't have search endpoint)
-  // For production, use a proper Bible API with search
-  const response = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(query)}&translation=kjv`);
-  if (!response.ok) throw new Error('Search failed');
-  return response.json();
+export async function search(query, versionId = VERSION_ID) {
+  try {
+    // DBT Search Endpoint: /search?q={query}&version_id={version_id}
+    const encodedQuery = encodeURIComponent(query);
+    const response = await fetch(
+      `${API_BASE_URL}/search?q=${encodedQuery}&version_id=${versionId}&key=${API_KEY}`
+    );
+    const results = await handleResponse(response);
+    
+    return results.map(item => ({
+      bookId: item.volume_id || item.book_id,
+      chapter: item.chapter_start,
+      verse: item.verse_start,
+      text: item.text,
+      reference: `${item.book_name || item.book_id} ${item.chapter_start}:${item.verse_start}`
+    }));
+  } catch (error) {
+    console.error("Error searching:", error);
+    return [];
+  }
 }
 
-// Book mappings
+export async function getAudioUrl(bookId, chapterNum, versionId = VERSION_ID) {
+  try {
+    // DBT Endpoint: /audio_chapters/{version_id}/{book_id}/{chapter_num}
+    const response = await fetch(
+      `${API_BASE_URL}/audio_chapters/${versionId}/${bookId}/${chapterNum}?key=${API_KEY}`
+    );
+    const audioData = await handleResponse(response);
+    return audioData.url; // Returns the direct MP3 URL
+  } catch (error) {
+    console.error("Error fetching audio:", error);
+    return null;
+  }
+}
+
+// Book mappings for fallback/manual reference
 export const BOOKS = [
-  { id: 'Genesis', name: 'Genesis', abbr: 'Gen', testament: 'OT', chapters: 50 },
-  { id: 'Exodus', name: 'Exodus', abbr: 'Exo', testament: 'OT', chapters: 40 },
-  { id: 'Leviticus', name: 'Leviticus', abbr: 'Lev', testament: 'OT', chapters: 27 },
-  { id: 'Numbers', name: 'Numbers', abbr: 'Num', testament: 'OT', chapters: 36 },
-  { id: 'Deuteronomy', name: 'Deuteronomy', abbr: 'Deu', testament: 'OT', chapters: 34 },
-  { id: 'Joshua', name: 'Joshua', abbr: 'Jos', testament: 'OT', chapters: 24 },
-  { id: 'Judges', name: 'Judges', abbr: 'Jdg', testament: 'OT', chapters: 21 },
-  { id: 'Ruth', name: 'Ruth', abbr: 'Rut', testament: 'OT', chapters: 4 },
-  { id: '1 Samuel', name: '1 Samuel', abbr: '1Sa', testament: 'OT', chapters: 31 },
-  { id: '2 Samuel', name: '2 Samuel', abbr: '2Sa', testament: 'OT', chapters: 24 },
-  { id: '1 Kings', name: '1 Kings', abbr: '1Ki', testament: 'OT', chapters: 22 },
-  { id: '2 Kings', name: '2 Kings', abbr: '2Ki', testament: 'OT', chapters: 25 },
-  { id: '1 Chronicles', name: '1 Chronicles', abbr: '1Ch', testament: 'OT', chapters: 29 },
-  { id: '2 Chronicles', name: '2 Chronicles', abbr: '2Ch', testament: 'OT', chapters: 36 },
-  { id: 'Ezra', name: 'Ezra', abbr: 'Ezr', testament: 'OT', chapters: 10 },
-  { id: 'Nehemiah', name: 'Nehemiah', abbr: 'Neh', testament: 'OT', chapters: 13 },
-  { id: 'Esther', name: 'Esther', abbr: 'Est', testament: 'OT', chapters: 10 },
-  { id: 'Job', name: 'Job', abbr: 'Job', testament: 'OT', chapters: 42 },
-  { id: 'Psalms', name: 'Psalms', abbr: 'Psa', testament: 'OT', chapters: 150 },
-  { id: 'Proverbs', name: 'Proverbs', abbr: 'Pro', testament: 'OT', chapters: 31 },
-  { id: 'Ecclesiastes', name: 'Ecclesiastes', abbr: 'Ecc', testament: 'OT', chapters: 12 },
-  { id: 'Song of Solomon', name: 'Song of Solomon', abbr: 'Sol', testament: 'OT', chapters: 8 },
-  { id: 'Isaiah', name: 'Isaiah', abbr: 'Isa', testament: 'OT', chapters: 66 },
-  { id: 'Jeremiah', name: 'Jeremiah', abbr: 'Jer', testament: 'OT', chapters: 52 },
-  { id: 'Lamentations', name: 'Lamentations', abbr: 'Lam', testament: 'OT', chapters: 5 },
-  { id: 'Ezekiel', name: 'Ezekiel', abbr: 'Eze', testament: 'OT', chapters: 48 },
-  { id: 'Daniel', name: 'Daniel', abbr: 'Dan', testament: 'OT', chapters: 12 },
-  { id: 'Hosea', name: 'Hosea', abbr: 'Hos', testament: 'OT', chapters: 14 },
-  { id: 'Joel', name: 'Joel', abbr: 'Joe', testament: 'OT', chapters: 3 },
-  { id: 'Amos', name: 'Amos', abbr: 'Amo', testament: 'OT', chapters: 9 },
-  { id: 'Obadiah', name: 'Obadiah', abbr: 'Oba', testament: 'OT', chapters: 1 },
-  { id: 'Jonah', name: 'Jonah', abbr: 'Jon', testament: 'OT', chapters: 4 },
-  { id: 'Micah', name: 'Micah', abbr: 'Mic', testament: 'OT', chapters: 7 },
-  { id: 'Nahum', name: 'Nahum', abbr: 'Nah', testament: 'OT', chapters: 3 },
-  { id: 'Habakkuk', name: 'Habakkuk', abbr: 'Hab', testament: 'OT', chapters: 3 },
-  { id: 'Zephaniah', name: 'Zephaniah', abbr: 'Zep', testament: 'OT', chapters: 3 },
-  { id: 'Haggai', name: 'Haggai', abbr: 'Hag', testament: 'OT', chapters: 2 },
-  { id: 'Zechariah', name: 'Zechariah', abbr: 'Zec', testament: 'OT', chapters: 14 },
-  { id: 'Malachi', name: 'Malachi', abbr: 'Mal', testament: 'OT', chapters: 4 },
-  { id: 'Matthew', name: 'Matthew', abbr: 'Mat', testament: 'NT', chapters: 28 },
-  { id: 'Mark', name: 'Mark', abbr: 'Mar', testament: 'NT', chapters: 16 },
-  { id: 'Luke', name: 'Luke', abbr: 'Luk', testament: 'NT', chapters: 24 },
-  { id: 'John', name: 'John', abbr: 'Joh', testament: 'NT', chapters: 21 },
-  { id: 'Acts', name: 'Acts', abbr: 'Act', testament: 'NT', chapters: 28 },
-  { id: 'Romans', name: 'Romans', abbr: 'Rom', testament: 'NT', chapters: 16 },
-  { id: '1 Corinthians', name: '1 Corinthians', abbr: '1Co', testament: 'NT', chapters: 16 },
-  { id: '2 Corinthians', name: '2 Corinthians', abbr: '2Co', testament: 'NT', chapters: 13 },
-  { id: 'Galatians', name: 'Galatians', abbr: 'Gal', testament: 'NT', chapters: 6 },
-  { id: 'Ephesians', name: 'Ephesians', abbr: 'Eph', testament: 'NT', chapters: 6 },
-  { id: 'Philippians', name: 'Philippians', abbr: 'Phi', testament: 'NT', chapters: 4 },
-  { id: 'Colossians', name: 'Colossians', abbr: 'Col', testament: 'NT', chapters: 4 },
-  { id: '1 Thessalonians', name: '1 Thessalonians', abbr: '1Th', testament: 'NT', chapters: 5 },
-  { id: '2 Thessalonians', name: '2 Thessalonians', abbr: '2Th', testament: 'NT', chapters: 3 },
-  { id: '1 Timothy', name: '1 Timothy', abbr: '1Ti', testament: 'NT', chapters: 6 },
-  { id: '2 Timothy', name: '2 Timothy', abbr: '2Ti', testament: 'NT', chapters: 4 },
-  { id: 'Titus', name: 'Titus', abbr: 'Tit', testament: 'NT', chapters: 3 },
-  { id: 'Philemon', name: 'Philemon', abbr: 'Phm', testament: 'NT', chapters: 1 },
-  { id: 'Hebrews', name: 'Hebrews', abbr: 'Heb', testament: 'NT', chapters: 13 },
-  { id: 'James', name: 'James', abbr: 'Jam', testament: 'NT', chapters: 5 },
-  { id: '1 Peter', name: '1 Peter', abbr: '1Pe', testament: 'NT', chapters: 5 },
-  { id: '2 Peter', name: '2 Peter', abbr: '2Pe', testament: 'NT', chapters: 3 },
-  { id: '1 John', name: '1 John', abbr: '1Jo', testament: 'NT', chapters: 5 },
-  { id: '2 John', name: '2 John', abbr: '2Jo', testament: 'NT', chapters: 1 },
-  { id: '3 John', name: '3 John', abbr: '3Jo', testament: 'NT', chapters: 1 },
-  { id: 'Jude', name: 'Jude', abbr: 'Jud', testament: 'NT', chapters: 1 },
-  { id: 'Revelation', name: 'Revelation', abbr: 'Rev', testament: 'NT', chapters: 22 },
+  { id: 'GEN', name: 'Genesis', abbr: 'Gen', testament: 'OT', chapters: 50 },
+  { id: 'EXO', name: 'Exodus', abbr: 'Exo', testament: 'OT', chapters: 40 },
+  { id: 'LEV', name: 'Leviticus', abbr: 'Lev', testament: 'OT', chapters: 27 },
+  { id: 'NUM', name: 'Numbers', abbr: 'Num', testament: 'OT', chapters: 36 },
+  { id: 'DEU', name: 'Deuteronomy', abbr: 'Deu', testament: 'OT', chapters: 34 },
+  { id: 'JOS', name: 'Joshua', abbr: 'Jos', testament: 'OT', chapters: 24 },
+  { id: 'JDG', name: 'Judges', abbr: 'Jdg', testament: 'OT', chapters: 21 },
+  { id: 'RUT', name: 'Ruth', abbr: 'Rut', testament: 'OT', chapters: 4 },
+  { id: '1SA', name: '1 Samuel', abbr: '1Sa', testament: 'OT', chapters: 31 },
+  { id: '2SA', name: '2 Samuel', abbr: '2Sa', testament: 'OT', chapters: 24 },
+  { id: '1KI', name: '1 Kings', abbr: '1Ki', testament: 'OT', chapters: 22 },
+  { id: '2KI', name: '2 Kings', abbr: '2Ki', testament: 'OT', chapters: 25 },
+  { id: '1CH', name: '1 Chronicles', abbr: '1Ch', testament: 'OT', chapters: 29 },
+  { id: '2CH', name: '2 Chronicles', abbr: '2Ch', testament: 'OT', chapters: 36 },
+  { id: 'EZR', name: 'Ezra', abbr: 'Ezr', testament: 'OT', chapters: 10 },
+  { id: 'NEH', name: 'Nehemiah', abbr: 'Neh', testament: 'OT', chapters: 13 },
+  { id: 'EST', name: 'Esther', abbr: 'Est', testament: 'OT', chapters: 10 },
+  { id: 'JOB', name: 'Job', abbr: 'Job', testament: 'OT', chapters: 42 },
+  { id: 'PSA', name: 'Psalms', abbr: 'Psa', testament: 'OT', chapters: 150 },
+  { id: 'PRO', name: 'Proverbs', abbr: 'Pro', testament: 'OT', chapters: 31 },
+  { id: 'ECC', name: 'Ecclesiastes', abbr: 'Ecc', testament: 'OT', chapters: 12 },
+  { id: 'SNG', name: 'Song of Solomon', abbr: 'Sol', testament: 'OT', chapters: 8 },
+  { id: 'ISA', name: 'Isaiah', abbr: 'Isa', testament: 'OT', chapters: 66 },
+  { id: 'JER', name: 'Jeremiah', abbr: 'Jer', testament: 'OT', chapters: 52 },
+  { id: 'LAM', name: 'Lamentations', abbr: 'Lam', testament: 'OT', chapters: 5 },
+  { id: 'EZK', name: 'Ezekiel', abbr: 'Eze', testament: 'OT', chapters: 48 },
+  { id: 'DAN', name: 'Daniel', abbr: 'Dan', testament: 'OT', chapters: 12 },
+  { id: 'HOS', name: 'Hosea', abbr: 'Hos', testament: 'OT', chapters: 14 },
+  { id: 'JOL', name: 'Joel', abbr: 'Joe', testament: 'OT', chapters: 3 },
+  { id: 'AMO', name: 'Amos', abbr: 'Amo', testament: 'OT', chapters: 9 },
+  { id: 'OBA', name: 'Obadiah', abbr: 'Oba', testament: 'OT', chapters: 1 },
+  { id: 'JON', name: 'Jonah', abbr: 'Jon', testament: 'OT', chapters: 4 },
+  { id: 'MIC', name: 'Micah', abbr: 'Mic', testament: 'OT', chapters: 7 },
+  { id: 'NAM', name: 'Nahum', abbr: 'Nah', testament: 'OT', chapters: 3 },
+  { id: 'HAB', name: 'Habakkuk', abbr: 'Hab', testament: 'OT', chapters: 3 },
+  { id: 'ZEP', name: 'Zephaniah', abbr: 'Zep', testament: 'OT', chapters: 3 },
+  { id: 'HAG', name: 'Haggai', abbr: 'Hag', testament: 'OT', chapters: 2 },
+  { id: 'ZEC', name: 'Zechariah', abbr: 'Zec', testament: 'OT', chapters: 14 },
+  { id: 'MAL', name: 'Malachi', abbr: 'Mal', testament: 'OT', chapters: 4 },
+  { id: 'MAT', name: 'Matthew', abbr: 'Mat', testament: 'NT', chapters: 28 },
+  { id: 'MRK', name: 'Mark', abbr: 'Mar', testament: 'NT', chapters: 16 },
+  { id: 'LUK', name: 'Luke', abbr: 'Luk', testament: 'NT', chapters: 24 },
+  { id: 'JHN', name: 'John', abbr: 'Joh', testament: 'NT', chapters: 21 },
+  { id: 'ACT', name: 'Acts', abbr: 'Act', testament: 'NT', chapters: 28 },
+  { id: 'ROM', name: 'Romans', abbr: 'Rom', testament: 'NT', chapters: 16 },
+  { id: '1CO', name: '1 Corinthians', abbr: '1Co', testament: 'NT', chapters: 16 },
+  { id: '2CO', name: '2 Corinthians', abbr: '2Co', testament: 'NT', chapters: 13 },
+  { id: 'GAL', name: 'Galatians', abbr: 'Gal', testament: 'NT', chapters: 6 },
+  { id: 'EPH', name: 'Ephesians', abbr: 'Eph', testament: 'NT', chapters: 6 },
+  { id: 'PHP', name: 'Philippians', abbr: 'Phi', testament: 'NT', chapters: 4 },
+  { id: 'COL', name: 'Colossians', abbr: 'Col', testament: 'NT', chapters: 4 },
+  { id: '1TH', name: '1 Thessalonians', abbr: '1Th', testament: 'NT', chapters: 5 },
+  { id: '2TH', name: '2 Thessalonians', abbr: '2Th', testament: 'NT', chapters: 3 },
+  { id: '1TI', name: '1 Timothy', abbr: '1Ti', testament: 'NT', chapters: 6 },
+  { id: '2TI', name: '2 Timothy', abbr: '2Ti', testament: 'NT', chapters: 4 },
+  { id: 'TIT', name: 'Titus', abbr: 'Tit', testament: 'NT', chapters: 3 },
+  { id: 'PHM', name: 'Philemon', abbr: 'Phm', testament: 'NT', chapters: 1 },
+  { id: 'HEB', name: 'Hebrews', abbr: 'Heb', testament: 'NT', chapters: 13 },
+  { id: 'JAS', name: 'James', abbr: 'Jam', testament: 'NT', chapters: 5 },
+  { id: '1PE', name: '1 Peter', abbr: '1Pe', testament: 'NT', chapters: 5 },
+  { id: '2PE', name: '2 Peter', abbr: '2Pe', testament: 'NT', chapters: 3 },
+  { id: '1JN', name: '1 John', abbr: '1Jo', testament: 'NT', chapters: 5 },
+  { id: '2JN', name: '2 John', abbr: '2Jo', testament: 'NT', chapters: 1 },
+  { id: '3JN', name: '3 John', abbr: '3Jo', testament: 'NT', chapters: 1 },
+  { id: 'JUD', name: 'Jude', abbr: 'Jud', testament: 'NT', chapters: 1 },
+  { id: 'REV', name: 'Revelation', abbr: 'Rev', testament: 'NT', chapters: 22 },
 ];
 
 // Inspirational verses for "Verse of the Day"

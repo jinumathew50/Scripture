@@ -11,6 +11,7 @@ function App() {
     currentBook, 
     currentChapter, 
     chapterData, 
+    audioUrl,
     verseOfDay,
     loading, 
     error,
@@ -25,27 +26,31 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('home');
 
-  const OTBooks = books.filter(b => b.testament === 'OT' || (b.name && isOT(b.name)));
-  const NTBooks = books.filter(b => b.testament === 'NT' || (b.name && !isOT(b.name)));
+  const OTBooks = books.filter(b => b.testament === 'OT');
+  const NTBooks = books.filter(b => b.testament === 'NT');
 
-  function isOT(bookName) {
-    const otBooks = ['Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy', 'Joshua', 'Judges', 'Ruth', 
-      '1 Samuel', '2 Samuel', '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 
-      'Esther', 'Job', 'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 
-      'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 
-      'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi'];
-    return otBooks.includes(bookName);
-  }
+  const getBookName = (bookId) => {
+    const book = books.find(b => b.id === bookId);
+    return book ? book.name : bookId;
+  };
 
-  const getBookChapters = (bookName) => {
-    const book = books.find(b => b.name === bookName || b.id === bookName);
+  const getBookChapters = (bookId) => {
+    const book = books.find(b => b.id === bookId || b.name === bookId);
     return book ? book.chapters : 0;
   };
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
-    // Simple search implementation
-    console.log('Searching for:', searchQuery);
+    if (!searchQuery.trim()) return;
+    
+    try {
+      const { search } = await import('./api/bible');
+      const results = await search(searchQuery);
+      console.log('Search results:', results);
+      alert(`Found ${results.length} results. Check console for details.`);
+    } catch (err) {
+      console.error('Search failed:', err);
+    }
   };
 
   return (
@@ -114,18 +119,18 @@ function App() {
               <div className="book-grid">
                 {OTBooks.map(book => (
                   <button
-                    key={book.name || book.id}
-                    className={`book-btn ${currentBook === (book.name || book.id) ? 'active' : ''}`}
+                    key={book.id}
+                    className={`book-btn ${currentBook === book.id ? 'active' : ''}`}
                     onClick={() => {
-                      navigateToBook(book.name || book.id);
+                      navigateToBook(book.id);
                       setShowMenu(false);
                     }}
                     style={{
-                      backgroundColor: currentBook === (book.name || book.id) ? palette.brandLight : 'transparent',
-                      color: currentBook === (book.name || book.id) ? palette.text : palette.textSecondary,
+                      backgroundColor: currentBook === book.id ? palette.brandLight : 'transparent',
+                      color: currentBook === book.id ? palette.text : palette.textSecondary,
                     }}
                   >
-                    {book.abbr || book.name?.substring(0, 3) || book.id?.substring(0, 3)}
+                    {book.abbr || book.name?.substring(0, 3)}
                   </button>
                 ))}
               </div>
@@ -134,18 +139,18 @@ function App() {
               <div className="book-grid">
                 {NTBooks.map(book => (
                   <button
-                    key={book.name || book.id}
-                    className={`book-btn ${currentBook === (book.name || book.id) ? 'active' : ''}`}
+                    key={book.id}
+                    className={`book-btn ${currentBook === book.id ? 'active' : ''}`}
                     onClick={() => {
-                      navigateToBook(book.name || book.id);
+                      navigateToBook(book.id);
                       setShowMenu(false);
                     }}
                     style={{
-                      backgroundColor: currentBook === (book.name || book.id) ? palette.brandLight : 'transparent',
-                      color: currentBook === (book.name || book.id) ? palette.text : palette.textSecondary,
+                      backgroundColor: currentBook === book.id ? palette.brandLight : 'transparent',
+                      color: currentBook === book.id ? palette.text : palette.textSecondary,
                     }}
                   >
-                    {book.abbr || book.name?.substring(0, 3) || book.id?.substring(0, 3)}
+                    {book.abbr || book.name?.substring(0, 3)}
                   </button>
                 ))}
               </div>
@@ -176,8 +181,12 @@ function App() {
                   onClick={() => {
                     const [book, chapterVerse] = verseOfDay.reference.split(' ');
                     const [chapter, verse] = chapterVerse.split(':');
-                    navigateToBook(book);
-                    navigateToChapter(parseInt(chapter));
+                    // Find book by name and get its ID
+                    const bookObj = books.find(b => b.name === book);
+                    if (bookObj) {
+                      navigateToBook(bookObj.id);
+                      navigateToChapter(parseInt(chapter));
+                    }
                   }}
                 >
                   Read Chapter
@@ -191,15 +200,29 @@ function App() {
                 <button onClick={prevChapter} className="nav-btn" disabled={loading}>←</button>
                 <div className="chapter-info">
                   <h2 style={{ fontFamily: "'Playfair Display', serif", margin: 0, fontSize: `${fontSize + 4}px` }}>
-                    {currentBook} {currentChapter}
+                    {getBookName(currentBook)} {currentChapter}
                   </h2>
                 </div>
                 <button onClick={nextChapter} className="nav-btn" disabled={loading}>→</button>
               </div>
 
+              {/* Audio Player (if available) */}
+              {audioUrl && (
+                <div className="audio-player" style={{ 
+                  padding: '12px', 
+                  backgroundColor: palette.surface,
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <audio controls style={{ width: '100%' }} src={audioUrl}>
+                    Your browser does not support the audio element.
+                  </audio>
+                </div>
+              )}
+
               {/* Chapter Navigation */}
               <div className="chapter-nav" style={{ backgroundColor: palette.surface }}>
-                {Array.from({ length: Math.min(getBookChapters(currentBook), 50) }, (_, i) => i + 1).map(ch => (
+                {Array.from({ length: Math.min(getBookChapters(currentBook), 150) }, (_, i) => i + 1).map(ch => (
                   <button
                     key={ch}
                     className={`chapter-btn ${currentChapter === ch ? 'active' : ''}`}
@@ -221,8 +244,8 @@ function App() {
                 
                 {!loading && !error && chapterData?.verses && (
                   chapterData.verses.map(verse => (
-                    <div key={verse.verse} className="verse">
-                      <sup className="verse-num">{verse.verse}</sup>
+                    <div key={verse.number} className="verse">
+                      <sup className="verse-num">{verse.number}</sup>
                       <span>{verse.text}</span>
                     </div>
                   ))
@@ -234,6 +257,28 @@ function App() {
               </div>
             </div>
           </>
+        )}
+        
+        {activeTab === 'read' && (
+          <div className="read-view" style={{ padding: '20px' }}>
+            <h2 style={{ fontFamily: "'Playfair Display', serif" }}>Reading Mode</h2>
+            <p>Select a book from the menu to start reading.</p>
+            <button 
+              onClick={() => setShowMenu(true)}
+              style={{
+                padding: '12px 24px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: palette.brand,
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '16px',
+                marginTop: '16px'
+              }}
+            >
+              Open Book Menu
+            </button>
+          </div>
         )}
       </main>
 

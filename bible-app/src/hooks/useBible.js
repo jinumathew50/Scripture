@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { fetchBooks, fetchChapter, getBookId } from '../api/bibleBrain';
+import { getBooks, getChapter, getAudioUrl } from '../api/bible';
 
-// Static fallback for book data (chapter counts) since BibleBrain API might have CORS issues on free tier
+// Static fallback for book data (chapter counts) since API might have CORS issues
 const BOOKS = [
   { name: "Genesis", id: "GEN", chapters: 50, testament: "OT" },
   { name: "Exodus", id: "EXO", chapters: 40, testament: "OT" },
@@ -52,7 +52,7 @@ const BOOKS = [
   { name: "2 Corinthians", id: "2CO", chapters: 13, testament: "NT" },
   { name: "Galatians", id: "GAL", chapters: 6, testament: "NT" },
   { name: "Ephesians", id: "EPH", chapters: 6, testament: "NT" },
-  { name: "Philippians", id: "PHI", chapters: 4, testament: "NT" },
+  { name: "Philippians", id: "PHP", chapters: 4, testament: "NT" },
   { name: "Colossians", id: "COL", chapters: 4, testament: "NT" },
   { name: "1 Thessalonians", id: "1TH", chapters: 5, testament: "NT" },
   { name: "2 Thessalonians", id: "2TH", chapters: 3, testament: "NT" },
@@ -73,9 +73,10 @@ const BOOKS = [
 
 export function useBible() {
   const [books, setBooks] = useState(BOOKS);
-  const [currentBook, setCurrentBook] = useState('John');
+  const [currentBook, setCurrentBook] = useState('JHN'); // Use ID instead of name
   const [currentChapter, setCurrentChapter] = useState(1);
   const [chapterData, setChapterData] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
   const [verseOfDay, setVerseOfDay] = useState({ text: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", reference: "John 3:16" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -84,18 +85,22 @@ export function useBible() {
   useEffect(() => {
     async function loadBooks() {
       try {
-        const data = await fetchBooks();
+        const data = await getBooks();
         if (data && data.length > 0) {
           // Merge API data with our static chapter counts
           const merged = data.map(apiBook => {
             const staticBook = BOOKS.find(b => b.id === apiBook.id || b.name === apiBook.name);
             return {
               ...apiBook,
-              chapters: staticBook ? staticBook.chapters : 0,
+              chapters: staticBook ? staticBook.chapters : (apiBook.chapters?.length || 0),
               testament: staticBook ? staticBook.testament : 'OT'
             };
           });
           setBooks(merged);
+          // Set default to first book if current not found
+          if (!merged.find(b => b.id === currentBook)) {
+            setCurrentBook(merged[0].id);
+          }
         }
       } catch (err) {
         console.warn('Using static book list:', err.message);
@@ -105,22 +110,28 @@ export function useBible() {
     loadBooks();
   }, []);
 
-  // Load chapter when book/chapter changes
+  // Load chapter and audio when book/chapter changes
   useEffect(() => {
     async function loadChapter() {
       setLoading(true);
       setError(null);
       try {
-        const bookId = getBookId(currentBook);
-        const data = await fetchChapter(bookId, currentChapter);
+        const data = await getChapter(currentBook, currentChapter);
         
-        // Transform BibleBrain response to our app's format
+        // Transform DBT response to our app's format
         if (data && data.verses) {
           const formattedVerses = data.verses.map(v => ({
             verse: v.number,
-            text: v.content
+            text: v.text
           }));
-          setChapterData({ verses: formattedVerses });
+          setChapterData({ 
+            verses: formattedVerses,
+            reference: `${currentBook} ${currentChapter}`
+          });
+          
+          // Also fetch audio URL
+          const audio = await getAudioUrl(currentBook, currentChapter);
+          setAudioUrl(audio);
         } else {
           throw new Error('Invalid chapter data format');
         }
@@ -136,8 +147,8 @@ export function useBible() {
     }
   }, [currentBook, currentChapter]);
 
-  const navigateToBook = (bookName) => {
-    setCurrentBook(bookName);
+  const navigateToBook = (bookId) => {
+    setCurrentBook(bookId);
     setCurrentChapter(1);
   };
 
@@ -146,14 +157,14 @@ export function useBible() {
   };
 
   const nextChapter = () => {
-    const book = books.find(b => b.name === currentBook || b.id === currentBook);
+    const book = books.find(b => b.id === currentBook || b.name === currentBook);
     if (book && currentChapter < book.chapters) {
       setCurrentChapter(currentChapter + 1);
     } else if (book) {
       // Try to go to next book
-      const idx = books.findIndex(b => b.name === currentBook || b.id === currentBook);
+      const idx = books.findIndex(b => b.id === currentBook || b.name === currentBook);
       if (idx < books.length - 1) {
-        setCurrentBook(books[idx + 1].name);
+        setCurrentBook(books[idx + 1].id);
         setCurrentChapter(1);
       }
     }
@@ -164,10 +175,10 @@ export function useBible() {
       setCurrentChapter(currentChapter - 1);
     } else {
       // Try to go to previous book
-      const idx = books.findIndex(b => b.name === currentBook || b.id === currentBook);
+      const idx = books.findIndex(b => b.id === currentBook || b.name === currentBook);
       if (idx > 0) {
         const prevBook = books[idx - 1];
-        setCurrentBook(prevBook.name);
+        setCurrentBook(prevBook.id);
         setCurrentChapter(prevBook.chapters);
       }
     }
@@ -178,6 +189,7 @@ export function useBible() {
     currentBook,
     currentChapter,
     chapterData,
+    audioUrl,
     verseOfDay,
     loading,
     error,
