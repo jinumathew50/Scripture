@@ -1,46 +1,4 @@
-```
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-build/
-*.js.map
-
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# Logs
-*.log
-
-# Coverage reports
-coverage/
-htmlcov/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Temporary files
-*.tmp
-*.temp
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Vite specific
-!.vite
-vite.config.js.bak
-*.bak
+```javascript
+// No build artifacts, dependencies, or temporary files detected in changes
+// Only source file modifications present
 ```

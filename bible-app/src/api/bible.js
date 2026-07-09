@@ -1,218 +1,139 @@
-// Bible API using Digital Bible Platform (DBT) - api.dbt.org/v4
-const API_BASE_URL = '/api/v4';  // Use Vite proxy to avoid CORS
-const API_KEY = '39cf40d2-bdb9-4a47-9f7e-e2d0ba021c93';
+// Bible API Service using bible-api.com (Free, no API key required)
+const BASE_URL = 'https://bible-api.com';
 
-// Cache for discovered version IDs
-let textVersionId = null;
-let audioVersionId = null;
-
-// Helper to handle DBT API response structure
-const handleResponse = async (response) => {
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Resource not found. Please check your API key and version.');
-    }
-    throw new Error(`API Error: ${response.status}`);
-  }
-  const data = await response.json();
-  return data.data || data; // DBT often wraps data in a 'data' property
+/**
+ * Map of book names to their IDs used by bible-api.com
+ */
+const BOOK_NAME_MAP = {
+  'GEN': 'genesis', 'EXO': 'exodus', 'LEV': 'leviticus', 'NUM': 'numbers',
+  'DEU': 'deuteronomy', 'JOS': 'joshua', 'JDG': 'judges', 'RUT': 'ruth',
+  '1SA': '1samuel', '2SA': '2samuel', '1KI': '1kings', '2KI': '2kings',
+  '1CH': '1chronicles', '2CH': '2chronicles', 'EZR': 'ezra', 'NEH': 'nehemiah',
+  'EST': 'esther', 'JOB': 'job', 'PSA': 'psalms', 'PRO': 'proverbs',
+  'ECC': 'ecclesiastes', 'SNG': 'songofsolomon', 'ISA': 'isaiah', 'JER': 'jeremiah',
+  'LAM': 'lamentations', 'EZK': 'ezekiel', 'DAN': 'daniel', 'HOS': 'hosea',
+  'JOL': 'joel', 'AMO': 'amos', 'OBA': 'obadiah', 'JON': 'jonah',
+  'MIC': 'micah', 'NAM': 'nahum', 'HAB': 'habakkuk', 'ZEP': 'zephaniah',
+  'HAG': 'haggai', 'ZEC': 'zechariah', 'MAL': 'malachi',
+  'MAT': 'matthew', 'MRK': 'mark', 'LUK': 'luke', 'JHN': 'john',
+  'ACT': 'acts', 'ROM': 'romans', '1CO': '1corinthians', '2CO': '2corinthians',
+  'GAL': 'galatians', 'EPH': 'ephesians', 'PHP': 'philippians', 'COL': 'colossians',
+  '1TH': '1thessalonians', '2TH': '2thessalonians', '1TI': '1timothy', '2TI': '2timothy',
+  'TIT': 'titus', 'PHM': 'philemon', 'HEB': 'hebrews', 'JAS': 'james',
+  '1PE': '1peter', '2PE': '2peter', '1JN': '1john', '2JN': '2john',
+  '3JN': '3john', 'JUD': 'jude', 'REV': 'revelation'
 };
 
 /**
- * Find a valid English Text Version dynamically
+ * Fetches the list of all Bible books
  */
-const findTextVersion = async () => {
-  if (textVersionId) return textVersionId;
-
+export const getBooks = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/bibles?language=en`, {
-      headers: { 'X-API-Key': API_KEY }
-    });
-
-    if (!response.ok) throw new Error('Failed to fetch versions');
-    
-    const data = await response.json();
-    const versions = data.data || [];
-    
-    // Prefer World English Bible (WEB) or other free versions
-    const preferred = versions.find(v => v.id === 'WEB') || 
-                      versions.find(v => v.id === 'ENGESV') || 
-                      versions.find(v => v.id === 'KJV') ||
-                      versions[0];
-
-    if (preferred) {
-      textVersionId = preferred.id;
-      console.log(`✅ Using text version: ${preferred.name} (${preferred.id})`);
-      return preferred.id;
-    }
-    throw new Error('No English text version found');
-  } catch (error) {
-    console.error('❌ Error finding text version:', error);
-    throw error;
-  }
-};
-
-/**
- * Find a valid Audio Version dynamically
- */
-const findAudioVersion = async () => {
-  if (audioVersionId) return audioVersionId;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/bibles?language=en&tags=audio`, {
-      headers: { 'X-API-Key': API_KEY }
-    });
-
-    if (!response.ok) throw new Error('Failed to fetch audio versions');
-    
-    const data = await response.json();
-    const versions = data.data || [];
-    const preferred = versions[0];
-
-    if (preferred) {
-      audioVersionId = preferred.id;
-      console.log(`✅ Using audio version: ${preferred.name} (${preferred.id})`);
-      return preferred.id;
-    }
-    throw new Error('No audio version found');
-  } catch (error) {
-    console.warn('⚠️ Audio not available:', error.message);
-    return null;
-  }
-};
-
-export async function getBooks() {
-  try {
-    const versionId = await findTextVersion();
-    const response = await fetch(`${API_BASE_URL}/bibles/${versionId}/books`, {
-      headers: { 'X-API-Key': API_KEY }
-    });
-    
-    const books = await handleResponse(response);
-    
-    // Map DBT volume structure to our app's expected structure
-    return books.map(book => ({
+    // bible-api.com doesn't have a books endpoint, so we use our static list
+    return BOOKS.map(book => ({
       id: book.id,
       name: book.name,
-      abbr: book.abbreviation || book.id.substring(0, 3).toUpperCase(),
-      testament: book.testament === 'NT' ? 'NT' : 'OT',
-      chapters: book.chapters || []
+      abbr: book.abbr,
+      testament: book.testament,
+      chapters: book.chapters
     }));
   } catch (error) {
-    console.error("Error fetching books:", error);
+    console.error('Error fetching books:', error);
     throw error;
   }
-}
+};
 
-export async function getChapter(bookId, chapterNum) {
+/**
+ * Fetches a specific chapter with all its verses
+ * @param {string} bookId - Book ID (e.g., 'GEN', 'JHN')
+ * @param {number} chapterNum - Chapter number
+ */
+export const getChapter = async (bookId, chapterNum) => {
   try {
-    const versionId = await findTextVersion();
+    const bookName = BOOK_NAME_MAP[bookId];
+    if (!bookName) {
+      throw new Error(`Unknown book ID: ${bookId}`);
+    }
+
+    const url = `${BASE_URL}/${bookName}+${chapterNum}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch chapter: ${response.status}`);
+    }
+
+    const data = await response.json();
     
-    // DBT Endpoint: /bibles/{version_id}/chapters/{book_id}/{chapter_num}
-    const response = await fetch(
-      `${API_BASE_URL}/bibles/${versionId}/chapters/${bookId}/${chapterNum}`,
-      { headers: { 'X-API-Key': API_KEY } }
-    );
-    
-    const chapterData = await handleResponse(response);
-    
-    // Format verses for the UI
-    const verses = chapterData.verses?.map(v => ({
-      number: v.num || v.number,
-      text: v.text
-    })) || [];
+    if (data.error) {
+      throw new Error(data.error);
+    }
 
     return {
       bookId,
       chapterNum,
-      versionId,
-      verses,
+      versionId: data.translation_id || 'web',
+      versionName: data.translation_name || 'World English Bible',
+      verses: data.verses?.map(v => ({
+        number: v.verse,
+        text: v.text.trim()
+      })) || [],
       reference: `${bookId} ${chapterNum}`
     };
   } catch (error) {
-    console.error("Error fetching chapter:", error);
+    console.error('Error fetching chapter:', error);
     throw error;
   }
-}
+};
 
-export async function getVerse(reference) {
-  // For single verse, we can use search or parse and fetch chapter
-  const parts = reference.split(' ');
-  if (parts.length < 2) throw new Error('Invalid reference format');
-  
-  const bookName = parts.slice(0, -1).join(' ');
-  const chapterVerse = parts[parts.length - 1].split(':');
-  const chapter = chapterVerse[0];
-  const verseNum = chapterVerse[1] || null;
-  
-  // Find book ID from name (simplified)
-  const bookId = bookName.replace(/ /g, '').toUpperCase(); 
-  
-  const chapterData = await getChapter(bookId, chapter);
-  if (verseNum) {
-    const verse = chapterData.verses.find(v => v.number === parseInt(verseNum));
-    return verse ? { ...verse, reference } : null;
-  }
-  return chapterData;
-}
-
-export async function search(query) {
+/**
+ * Fetches a single verse by reference
+ * @param {string} reference - Verse reference (e.g., 'John 3:16')
+ */
+export const getVerse = async (reference) => {
   try {
-    const versionId = await findTextVersion();
-    const encodedQuery = encodeURIComponent(query);
-    
-    const response = await fetch(
-      `${API_BASE_URL}/bibles/${versionId}/search?q=${encodedQuery}`,
-      { headers: { 'X-API-Key': API_KEY } }
-    );
-    
-    const results = await handleResponse(response);
-    
-    return results.map(item => ({
-      bookId: item.volume_id || item.book_id,
-      chapter: item.chapter_start,
-      verse: item.verse_start,
-      text: item.text,
-      reference: `${item.book_name || item.book_id} ${item.chapter_start}:${item.verse_start}`
-    }));
-  } catch (error) {
-    console.error("Error searching:", error);
-    return [];
-  }
-}
+    const formattedRef = reference.toLowerCase().replace(/ /g, '+').replace(':', '+');
+    const url = `${BASE_URL}/${formattedRef}`;
+    const response = await fetch(url);
 
-export async function getAudioUrl(bookId, chapterNum) {
-  try {
-    const versionId = await findAudioVersion();
-    if (!versionId) return null;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch verse: ${response.status}`);
+    }
 
-    // DBT Endpoint: /bibles/{version_id}/chapters/{book_id}/{chapter_num}
-    // Audio versions return media info in the chapter response
-    const response = await fetch(
-      `${API_BASE_URL}/bibles/${versionId}/chapters/${bookId}/${chapterNum}`,
-      { headers: { 'X-API-Key': API_KEY } }
-    );
+    const data = await response.json();
     
-    if (!response.ok) return null;
-    
-    const audioData = await handleResponse(response);
-    
-    // Check for direct URL in response
-    if (audioData.path && audioData.path.startsWith('http')) {
-      return audioData.path;
+    if (data.error) {
+      throw new Error(data.error);
     }
-    
-    // Some DBT audio providers use a different structure
-    if (audioData.media && audioData.media.url) {
-      return audioData.media.url;
-    }
-    
-    return null;
+
+    return {
+      reference: data.reference,
+      text: data.text,
+      versionId: data.translation_id,
+      verses: data.verses
+    };
   } catch (error) {
-    console.error("Error fetching audio:", error);
-    return null;
+    console.error('Error fetching verse:', error);
+    throw error;
   }
-}
+};
+
+/**
+ * Search for verses containing a query
+ * Note: bible-api.com doesn't support search, so we return empty array
+ */
+export const search = async (query) => {
+  console.log('Search not available with current API');
+  return [];
+};
+
+/**
+ * Get audio URL for a chapter
+ * Note: bible-api.com doesn't provide audio, so we return null
+ */
+export const getAudioUrl = async (bookId, chapterNum) => {
+  console.log('Audio not available with current API');
+  return null;
+};
 
 // Book mappings for fallback/manual reference
 export const BOOKS = [
