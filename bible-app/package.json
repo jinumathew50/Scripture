@@ -8,15 +8,25 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": ["bible", "react", "vite", "christian", "scripture"],
+  "keywords": [
+    "bible",
+    "react",
+    "vite",
+    "christian",
+    "scripture"
+  ],
   "author": "",
   "license": "MIT",
   "description": "A modern Bible reading application built with React and Vite",
   "dependencies": {
+    "@fortawesome/free-regular-svg-icons": "^7.3.0",
+    "@fortawesome/free-solid-svg-icons": "^7.3.0",
+    "@fortawesome/react-fontawesome": "^3.4.0",
     "@vitejs/plugin-react": "^6.0.3",
     "axios": "^1.18.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
     "vite": "^8.1.4"
   }
 }
