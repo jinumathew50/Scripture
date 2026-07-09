@@ -116,12 +116,15 @@ export function useBible() {
       setLoading(true);
       setError(null);
       try {
+        console.log(`📖 Loading ${currentBook} chapter ${currentChapter}...`);
         const data = await getChapter(currentBook, currentChapter);
         
+        console.log('✅ Chapter data received:', data);
+        
         // Transform DBT response to our app's format
-        if (data && data.verses) {
+        if (data && data.verses && data.verses.length > 0) {
           const formattedVerses = data.verses.map(v => ({
-            verse: v.number,
+            verse: v.number || v.num,
             text: v.text
           }));
           setChapterData({ 
@@ -130,14 +133,22 @@ export function useBible() {
           });
           
           // Also fetch audio URL
-          const audio = await getAudioUrl(currentBook, currentChapter);
-          setAudioUrl(audio);
+          try {
+            const audio = await getAudioUrl(currentBook, currentChapter);
+            console.log('🎵 Audio URL:', audio);
+            setAudioUrl(audio);
+          } catch (audioErr) {
+            console.log('⚠️ No audio available for this chapter');
+            setAudioUrl(null);
+          }
         } else {
-          throw new Error('Invalid chapter data format');
+          console.warn('⚠️ No verses found in chapter data');
+          throw new Error('No verses found in this chapter');
         }
       } catch (err) {
-        console.error('Failed to load chapter:', err);
+        console.error('❌ Failed to load chapter:', err);
         setError(err.message || 'Failed to load chapter. Please check your internet connection.');
+        setChapterData(null);
       } finally {
         setLoading(false);
       }
