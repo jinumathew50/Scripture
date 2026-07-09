@@ -1,4 +1,4 @@
-import { useTheme } from '../hooks/useTheme';
+import { useTheme } from './ThemeProvider';
 
 export default function Header({ onMenuClick, onSearchClick }) {
   const { theme, palette, toggleTheme, increaseFont, decreaseFont, fontSize } = useTheme();
