@@ -1,5 +1,5 @@
 // Bible API using Digital Bible Platform (DBT) - api.dbt.org/v4
-const API_BASE_URL = 'https://api.dbt.org/v4';
+const API_BASE_URL = '/api/v4';  // Use Vite proxy to avoid CORS
 const API_KEY = '39cf40d2-bdb9-4a47-9f7e-e2d0ba021c93';
 
 // Cache for discovered version IDs
