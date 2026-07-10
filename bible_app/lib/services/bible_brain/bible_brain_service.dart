@@ -9,10 +9,12 @@ import '../../domain/entities/bible_entities.dart';
 class BibleBrainService {
   final String edgeFunctionUrl;
   final String? supabaseToken;
+  final String apiKey;
 
   BibleBrainService({
     required this.edgeFunctionUrl,
     this.supabaseToken,
+    this.apiKey = '',
   });
 
   /// Get a list of available Bible translations.

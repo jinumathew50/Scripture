@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/supabase/supabase_client.dart';
 import '../services/bible_brain/bible_brain_service.dart';
 import '../services/audio/audio_service.dart';
@@ -12,10 +12,18 @@ import 'core/theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize environment configuration from .env file
+  await dotenv.load(fileName: '.env');
+  
+  // Get config from environment
+  final supabaseUrl = dotenv.env['SUPABASE_URL']!;
+  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
+  final bibleBrainApiKey = dotenv.env['BIBLE_BRAIN_API_KEY'] ?? '';
+
   // Initialize Supabase
   await SupabaseClient.instance.initialize(
-    supabaseUrl: const String.fromEnvironment('SUPABASE_URL'),
-    supabaseAnonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
+    supabaseUrl: supabaseUrl,
+    supabaseAnonKey: supabaseAnonKey,
   );
 
   // Initialize audio service for background playback
@@ -24,8 +32,9 @@ void main() async {
 
   // Create services
   final bibleBrainService = BibleBrainService(
-    edgeFunctionUrl: '${const String.fromEnvironment('SUPABASE_URL')}/functions/v1/bible-brain',
+    edgeFunctionUrl: '$supabaseUrl/functions/v1/bible-brain',
     supabaseToken: SupabaseClient.instance.currentUser?.accessToken,
+    apiKey: bibleBrainApiKey,
   );
 
   runApp(
